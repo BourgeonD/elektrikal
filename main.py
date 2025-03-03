@@ -72,16 +72,19 @@ class GridApp:
         item_id = self.item_id_counter
         self.item_id_counter += 1
 
-        # Définir les noms et couleurs spécifiques
+        # Définition des noms et couleurs
         if item_id == 0:
             name = "Câble"
-            color = "green"  # Câble désactivé (gris ensuite)
+            color = "green"  # Câble activé
         elif item_id == 1:
             name = "Bouton"
             color = "red"  # Bouton activable
+        elif item_id == 2:
+            name = "Switch"
+            color = "orange"  # Switch (interrupteur)
         else:
             name = f"Item {item_id}"
-            color = "blue"  # Autres items lambda
+            color = "blue"  # Autres items
 
         item = tk.Canvas(self.items_container, width=self.grid_size, height=self.grid_size, bg='white')
         item.pack(side=tk.LEFT, padx=5, pady=5)
@@ -99,6 +102,7 @@ class GridApp:
 
         if hasattr(self, 'item_selector'):
             self.update_item_selector()
+
 
     def create_settings_panel(self):
         tk.Label(self.frame_settings, text="Sélectionner un item:").pack()
@@ -157,6 +161,7 @@ class GridApp:
         self.update_item_selector()
     
     def place_item(self, event):
+        """Place un item sur la grille avec une gestion correcte des connexions et des clics."""
         if self.selected_item is not None:
             x, y = event.x // self.grid_size, event.y // self.grid_size
             color = self.items[self.selected_item]['color']
@@ -164,34 +169,57 @@ class GridApp:
             item = self.canvas.create_oval(
                 x * self.grid_size + 5, y * self.grid_size + 5,
                 (x + 1) * self.grid_size - 5, (y + 1) * self.grid_size - 5,
-                fill=color if self.selected_item != 0 else "gray",  # Câble désactivé de base
+                fill=color if self.selected_item != 0 else "gray",
                 tags='movable'
             )
 
-            # Stocker l'item placé
+            # Enregistrer la position et l'état de l'item placé
             self.placed_items[item] = {
                 'id': self.selected_item,
-                'active': (self.selected_item == 1),  # Bouton activable, câble inactif au départ
+                'active': (self.selected_item == 1),
                 'position': (x, y)
             }
 
-            # Si c'est un bouton, ajouter le comportement d'activation
+            # Attacher l'événement de déplacement
+            self.canvas.tag_bind(item, "<B1-Motion>", self.move_item)
+
+            # Si c'est un bouton, ajouter l'événement de clic
             if self.selected_item == 1:
                 self.canvas.tag_bind(item, "<Button-1>", self.toggle_item_state)
 
-            # Mettre à jour les câbles après chaque placement
+            # Mettre à jour la grille après placement
             self.update_cable_state()
 
             self.selected_item = None
             self.selected_item_label.config(text="Aucun item sélectionné", fg="red")
+
+
+
     
     def move_item(self, event):
-        x, y = event.x // self.grid_size, event.y // self.grid_size
+        """Déplace un item sur la grille et met à jour les connexions."""
         item = self.canvas.find_withtag(tk.CURRENT)
         if item:
-            self.canvas.coords(item,
-                               x * self.grid_size + 5, y * self.grid_size + 5,
-                               (x + 1) * self.grid_size - 5, (y + 1) * self.grid_size - 5)
+            x, y = event.x // self.grid_size, event.y // self.grid_size
+
+            # Mettre à jour la position de l'item déplacé
+            self.placed_items[item[0]]['position'] = (x, y)
+
+            # Déplacer l'élément graphiquement
+            self.canvas.coords(
+                item,
+                x * self.grid_size + 5, y * self.grid_size + 5,
+                (x + 1) * self.grid_size - 5, (y + 1) * self.grid_size - 5
+            )
+
+            # Réattribuer l'événement de clic s'il s'agit d'un bouton
+            if self.placed_items[item[0]]['id'] == 1:
+                self.canvas.tag_bind(item, "<Button-1>", self.toggle_item_state)
+
+            # Mettre à jour les connexions après déplacement
+            self.update_cable_state()
+
+
     
     def delete_item(self, event):
         item = self.canvas.find_withtag(tk.CURRENT)
@@ -217,9 +245,6 @@ class GridApp:
 
                 # Mettre à jour les câbles après activation/désactivation du bouton
                 self.update_cable_state()
-
-
-
 
     def update_item_0_state(self):
         # Trouver les positions des items activés
@@ -255,33 +280,108 @@ class GridApp:
                     self.canvas.itemconfig(item, fill="gray")  # Reste désactivé
 
     def update_cable_state(self):
-        """Met à jour l'état des câbles en fonction des sources activables actives."""
-        # Trouver toutes les positions des items activés qui sont activables (ex: boutons)
-        active_sources = {data['position'] for item, data in self.placed_items.items() if data['id'] == 1 and data['active']}
+        """Met à jour l'état des câbles et des switches en fonction des connexions réelles, avec transmission unidirectionnelle correcte."""
 
-        # Liste des câbles placés
-        cables = [item for item, data in self.placed_items.items() if data['id'] == 0]
+        # Trouver toutes les sources activées (Boutons et Switches activés)
+        active_sources = {data['position'] for item, data in self.placed_items.items() if data['active']}
 
-        # Désactiver tous les câbles temporairement
-        for cable in cables:
-            self.placed_items[cable]['active'] = False
-            self.canvas.itemconfig(cable, fill="gray")
+        # Liste temporaire pour éviter les conflits pendant les mises à jour
+        cables_and_switches = {item: data for item, data in self.placed_items.items() if data['id'] in [0, 2]}
 
-        # Réactiver uniquement ceux connectés à une source activée
+        # Désactiver temporairement tous les câbles et switches
+        for item, data in cables_and_switches.items():
+            data['active'] = False
+            self.canvas.itemconfig(item, fill="gray")
+
+        # Première passe : activer les switches selon leurs nouvelles règles
         updated = True
-        while updated:  # Continue tant qu'il y a des changements
+        while updated:
             updated = False
-            for cable in cables:
-                x, y = self.placed_items[cable]['position']
+            for item, data in list(cables_and_switches.items()):
+                x, y = data['position']
+                item_id = data['id']
 
-                # Vérifier si un câble a un voisin qui est activable et activé
-                adjacent_positions = [(x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1)]
-                if any(pos in active_sources for pos in adjacent_positions):
-                    if not self.placed_items[cable]['active']:  # Si le câble était inactif
-                        self.placed_items[cable]['active'] = True
-                        self.canvas.itemconfig(cable, fill="green")  # Activer le câble
-                        active_sources.add((x, y))  # Ce câble devient une nouvelle source activée
-                        updated = True  # Indiquer qu'on a mis à jour un câble
+                # Définition des positions adjacentes
+                left_pos = (x - 1, y)
+                right_pos = (x + 1, y)
+                up_pos = (x, y - 1)
+                down_pos = (x, y + 1)
+
+                adjacent_positions = [left_pos, up_pos, down_pos]  # Positions influençant le switch
+
+                # Vérifie si le switch reçoit une activation d'une source activée
+                receiving_signal = any(pos in active_sources for pos in adjacent_positions)
+
+                # Vérifie si le switch est totalement isolé (aucun voisin à gauche/en haut/en bas)
+                has_no_input_neighbors = not any(pos in [d['position'] for _, d in self.placed_items.items()] for pos in adjacent_positions)
+
+                # Vérifie si un voisin est DÉSACTIVÉ (il compte comme "rien")
+                has_inactive_neighbor = any(
+                    pos in [d['position'] for _, d in self.placed_items.items() if not d['active']]
+                    for pos in adjacent_positions
+                )
+
+                # Gestion du switch avec la nouvelle règle
+                if item_id == 2:  # Switch
+                    if receiving_signal:  # Un switch reçoit une activation à gauche/en haut/en bas, il ne transmet rien
+                        if data['active']:
+                            data['active'] = False
+                            self.canvas.itemconfig(item, fill="gray")
+                            updated = True
+                    elif has_no_input_neighbors or has_inactive_neighbor:  # Si le switch n'a rien OU un item désactivé à gauche/en haut/en bas
+                        if not data['active']:
+                            data['active'] = True
+                            self.canvas.itemconfig(item, fill="orange")
+                            updated = True
+
+        # Deuxième passe : activer les câbles après mise à jour des switches
+        updated = True
+        while updated:
+            updated = False
+            for item, data in list(cables_and_switches.items()):
+                x, y = data['position']
+                item_id = data['id']
+
+                # Définition des positions adjacentes
+                left_pos = (x - 1, y)
+                right_pos = (x + 1, y)
+                up_pos = (x, y - 1)
+                down_pos = (x, y + 1)
+
+                # Vérification des connexions
+                connected = any(pos in active_sources for pos in [left_pos, right_pos, up_pos, down_pos])
+
+                # Gestion du câble (activation uniquement si relié à une source)
+                if item_id == 0:
+                    if connected:
+                        if not data['active']:
+                            data['active'] = True
+                            self.canvas.itemconfig(item, fill="green")
+                            active_sources.add((x, y))
+                            updated = True
+                    else:
+                        if data['active']:
+                            data['active'] = False
+                            self.canvas.itemconfig(item, fill="gray")
+                            updated = True
+
+        # Transmission à droite UNIQUEMENT si le switch est activé
+        for item, data in list(cables_and_switches.items()):
+            if data['id'] == 2 and data['active']:  # Si c'est un switch activé
+                x, y = data['position']
+                right_pos = (x + 1, y)
+
+                # Vérifier s'il y a un câble à droite et l'activer si nécessaire
+                for target_item, target_data in self.placed_items.items():
+                    if target_data['position'] == right_pos and target_data['id'] == 0:  # Vérifie si c'est un câble
+                        if not target_data['active']:  # Active uniquement si c'était inactif
+                            target_data['active'] = True
+                            self.canvas.itemconfig(target_item, fill="green")
+                        elif not data['active']:  # Si le switch est désactivé, désactive aussi le câble à droite
+                            target_data['active'] = False
+                            self.canvas.itemconfig(target_item, fill="gray")
+
+
 
 
 
