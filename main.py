@@ -47,7 +47,7 @@ class GridApp:
         self.create_presets_panel()  # Création du panneau presets
         self.draw_grid()
         # Création des items par défaut (incluant LED)
-        for i in range(4):
+        for i in range(6):
             self.add_item()
         
         # Bindings pour le canvas
@@ -70,6 +70,8 @@ class GridApp:
         self.update_switches()
         self.update_cables()
         self.update_leds()
+        self.update_comparators()
+        self.update_repeaters()
         self.ticker_id = self.root.after(self.tick_interval, self.update_loop)
 
     # ---------------------- Mise à jour des éléments ----------------------
@@ -444,6 +446,81 @@ class GridApp:
                 elif not active and data.get('active', False):
                     data['active'] = False
                     self.canvas.itemconfig(item, fill="grey")
+                    
+    def update_comparators(self):
+        """Met à jour les comparateurs en fonction des entrées gauche et arrière."""
+        for item, data in self.placed_items.items():
+            if data['id'] == 4:  # Comparateur
+                x, y = data['position']
+
+                # Positions des entrées
+                left_pos = (x - 1, y)
+                back_pos = (x, y - 1)  # Entrée arrière
+                right_pos = (x + 1, y)  # Sortie
+
+                left_active = left_pos in self.position_index and self.placed_items[self.position_index[left_pos]].get('active', False)
+                back_active = back_pos in self.position_index and self.placed_items[self.position_index[back_pos]].get('active', False)
+
+                # Logique du comparateur (fonctionne comme en redstone) :
+                # - Si l'entrée arrière est plus forte que l'entrée latérale → Comparateur désactivé.
+                # - Sinon, il propage le signal latéral vers l'avant.
+                if back_active and not left_active:
+                    data['active'] = False
+                    self.canvas.itemconfig(item, fill="gray")  # Désactivé
+                else:
+                    data['active'] = left_active
+                    self.canvas.itemconfig(item, fill="purple" if left_active else "gray")
+
+                # Propager l'activation vers l'avant (si actif)
+                if data['active'] and right_pos in self.position_index:
+                    forward_item = self.placed_items[self.position_index[right_pos]]
+                    if forward_item['id'] == 0:  # Si câble en sortie
+                        forward_item['active'] = True
+                        self.canvas.itemconfig(self.position_index[right_pos], fill="green")
+
+    def update_repeaters(self):
+        """Met à jour les répéteurs pour qu'ils prolongent un signal uniquement vers l'avant (droite)."""
+        for item, data in self.placed_items.items():
+            if data['id'] == 5:  # Répéteur
+                x, y = data['position']
+
+                # Position d'entrée (arrière) et de sortie (avant)
+                back_pos = (x - 1, y)  # Entrée arrière (gauche)
+                front_pos = (x + 1, y)  # Sortie avant (droite)
+
+                back_active = back_pos in self.position_index and self.placed_items[self.position_index[back_pos]].get('active', False)
+
+                # Si l'entrée arrière est active, le répéteur s'allume et envoie un signal vers l'avant
+                if back_active:
+                    data['active'] = True
+                    self.canvas.itemconfig(item, fill="blue")  # Répéteur activé
+
+                    # Propage le signal vers l'avant après un léger délai (100ms)
+                    self.root.after(100, lambda: self.propagate_repeater_signal(front_pos))
+                else:
+                    data['active'] = False
+                    self.canvas.itemconfig(item, fill="gray")  # Répéteur éteint
+        
+    def propagate_repeater_signal(self, front_pos):
+        """Propage le signal du répéteur à l'élément de sortie après un délai."""
+        if front_pos in self.position_index:
+            front_item = self.placed_items[self.position_index[front_pos]]
+
+            # Si c'est un câble, il devient actif
+            if front_item['id'] == 0:
+                front_item['active'] = True
+                self.canvas.itemconfig(self.position_index[front_pos], fill="green")
+
+            # Si c'est un autre répéteur, il est activé aussi
+            elif front_item['id'] == 5:
+                front_item['active'] = True
+                self.canvas.itemconfig(self.position_index[front_pos], fill="blue")
+
+            # Si c'est un switch ou une LED, ils s'activent aussi
+            elif front_item['id'] in [2, 3]:  
+                front_item['active'] = True
+                color = "orange" if front_item['id'] == 2 else "yellow"  # Switch ou LED
+                self.canvas.itemconfig(self.position_index[front_pos], fill=color)
 
     # ---------------------- Ajout d'items ----------------------
     def add_item(self):
@@ -461,6 +538,12 @@ class GridApp:
         elif item_id == 3:
             name = "LED"
             color = "grey"
+        elif item_id == 4:
+            name = "Comparateur"
+            color = "purple"
+        elif item_id == 5:
+            name = "Amplificateur"
+            color = "blue"
         else:
             name = f"Item {item_id}"
             color = "blue"
