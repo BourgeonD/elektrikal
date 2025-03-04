@@ -1,13 +1,12 @@
 import tkinter as tk
 from tkinter import ttk, filedialog
-from PIL import Image, ImageTk
 
 class GridApp:
-    def __init__(self, root, rows=8, cols=8):
+    def __init__(self, root, rows=16, cols=16):
         self.root = root
         self.rows = rows
         self.cols = cols
-        self.grid_size = 50  # Taille d'une case
+        self.grid_size = 30  # Taille d'une case
         self.items = {}
         self.placed_items = {}
         self.selected_item = None
@@ -119,18 +118,7 @@ class GridApp:
         self.color_entry = tk.Entry(self.frame_settings)
         self.color_entry.pack()
         
-        tk.Button(self.frame_settings, text='Changer Texture', command=self.load_texture).pack()
-        
         tk.Button(self.frame_settings, text='Appliquer', command=self.apply_settings).pack()
-    
-    def load_texture(self):
-        file_path = filedialog.askopenfilename(filetypes=[("Images", "*.png;*.jpg;*.jpeg;*.bmp")])
-        if file_path and self.selected_item is not None:
-            img = Image.open(file_path)
-            img = img.resize((self.grid_size, self.grid_size), Image.Resampling.LANCZOS)
-            self.textures[self.selected_item] = ImageTk.PhotoImage(img)
-            self.items[self.selected_item]['texture'] = self.textures[self.selected_item]
-            self.items[self.selected_item]['canvas'].create_image(0, 0, anchor=tk.NW, image=self.textures[self.selected_item])
     
     def update_item_selector(self):
         self.item_selector['values'] = [f"{item_id}: {data['name']}" for item_id, data in self.items.items()]
@@ -304,101 +292,90 @@ class GridApp:
                     self.canvas.itemconfig(item, fill="gray")  # Reste désactivé
 
     def update_switches(self):
-        """Met à jour les switches après stabilisation et évite les boucles infinies."""
-
-        active_sources = {data['position'] for item, data in self.placed_items.items() if data['active']}
         switches = {item: data for item, data in self.placed_items.items() if data['id'] == 2}
+        for item, data in switches.items():
+            # Vérification de la présence et de l'initialisation du switch
+            if item not in self.placed_items:
+                continue
+            if not data.get('initialized', False):
+                continue
 
-        updated = True
-        while updated:
-            updated = False
-            for item, data in list(switches.items()):
-                if item not in self.placed_items:
-                    continue  # Sécurité si l'élément a été supprimé
+            x, y = data['position']
+            left_pos = (x - 1, y)
 
-                # Ne pas mettre à jour un switch non initialisé
-                if not data.get('initialized', False):
-                    continue
+            # Recherche de l'item à gauche du switch
+            left_item = None
+            for other_item, other_data in self.placed_items.items():
+                if other_data['position'] == left_pos:
+                    left_item = other_data
+                    break
 
-                x, y = data['position']
-                left_pos = (x - 1, y)
-                right_pos = (x + 1, y)
-                up_pos = (x, y - 1)
-                down_pos = (x, y + 1)
+            # Si un item à gauche est présent ET qu'il est activé, le switch se désactive.
+            # Sinon, il s'active.
+            new_state = False if (left_item is not None and left_item.get('active', False)) else True
 
-                adjacent_positions = [left_pos, up_pos, down_pos]
-
-                # Vérifie si le switch reçoit une activation d'une source activée
-                receiving_signal = any(pos in active_sources for pos in adjacent_positions)
-
-                # Vérifie si un voisin est désactivé (il compte comme "rien")
-                has_inactive_neighbor = any(
-                    pos in [d['position'] for _, d in self.placed_items.items() if not d['active']]
-                    for pos in adjacent_positions
-                )
-                has_no_input_neighbors = not any(pos in [d['position'] for _, d in self.placed_items.items()] for pos in adjacent_positions)
-
-                # Éviter que le switch change d'état trop vite
-                previous_state = data.get('previous_state', None)
-
-                if receiving_signal:
-                    if data['active']:
-                        data['active'] = False
-                        self.canvas.itemconfig(item, fill="gray")
-                        updated = True
-                elif has_no_input_neighbors or has_inactive_neighbor:
-                    if previous_state is not False:
-                        data['active'] = True
-                        self.canvas.itemconfig(item, fill="orange")
-                        updated = True
-
-                # Mémoriser l'état précédent
-                data['previous_state'] = data['active']
-
-        # Met à jour les câbles après les switches pour éviter les boucles infinies
+            if data['active'] != new_state:
+                data['active'] = new_state
+                new_color = "orange" if new_state else "gray"
+                self.canvas.itemconfig(item, fill=new_color)
+        
+        # On lance la mise à jour des câbles après un court délai
         self.root.after(50, self.update_cables)
 
-
-
-
-
-
+        
     def update_cables(self):
-        """Met à jour les câbles APRÈS les switches pour éviter les conflits et les boucles infinies."""
-
-        active_sources = {data['position'] for item, data in self.placed_items.items() if data['active']}
+        # Récupérer tous les câbles (item id == 0)
         cables = {item: data for item, data in self.placed_items.items() if data['id'] == 0}
-
-        updated = True
-        while updated:
-            updated = False
-            for item, data in list(cables.items()):
-                if item not in self.placed_items:
-                    continue
-
-                x, y = data['position']
-                left_pos = (x - 1, y)
-                right_pos = (x + 1, y)
-                up_pos = (x, y - 1)
-                down_pos = (x, y + 1)
-
-                connected = any(pos in active_sources for pos in [left_pos, right_pos, up_pos, down_pos])
-
-                if connected:
-                    if not data['active']:
-                        data['active'] = True
-                        self.canvas.itemconfig(item, fill="green")
-                        active_sources.add((x, y))
-                        updated = True
-                else:
-                    if data['active']:
-                        data['active'] = False
-                        self.canvas.itemconfig(item, fill="gray")
-                        updated = True
-
-        # S'assurer que les switches ne se réactivent pas immédiatement après les câbles
+        
+        # Sources actives : boutons et switches activés
+        active_sources = []
+        for item, data in self.placed_items.items():
+            if data.get('active', False) and data['id'] in (1, 2):
+                if data['id'] == 1:
+                    # Les boutons transmettent dans toutes les directions
+                    allowed_dirs = [(-1, 0), (1, 0), (0, -1), (0, 1)]
+                elif data['id'] == 2:
+                    # Les switches transmettent vers la droite, le haut et le bas uniquement (pas vers la gauche)
+                    allowed_dirs = [(1, 0), (0, -1), (0, 1)]
+                active_sources.append((data['position'], allowed_dirs))
+        
+        # Flood fill : trouver tous les câbles connectés à une source active
+        reachable = set()
+        frontier = []
+        # Initialisation de la frontière à partir des sources
+        for pos, allowed_dirs in active_sources:
+            x, y = pos
+            for dx, dy in allowed_dirs:
+                neighbor = (x + dx, y + dy)
+                for cable_item, cable_data in cables.items():
+                    if cable_data['position'] == neighbor and neighbor not in reachable:
+                        reachable.add(neighbor)
+                        frontier.append(neighbor)
+        
+        # Propagation sur le réseau de câbles (transmission dans toutes les directions)
+        while frontier:
+            current = frontier.pop()
+            cx, cy = current
+            for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                neighbor = (cx + dx, cy + dy)
+                for cable_item, cable_data in cables.items():
+                    if cable_data['position'] == neighbor and neighbor not in reachable:
+                        reachable.add(neighbor)
+                        frontier.append(neighbor)
+        
+        # Mise à jour de l'état des câbles en fonction de leur connexion aux sources actives
+        for cable_item, cable_data in cables.items():
+            if cable_data['position'] in reachable:
+                if not cable_data['active']:
+                    cable_data['active'] = True
+                    self.canvas.itemconfig(cable_item, fill="green")
+            else:
+                if cable_data['active']:
+                    cable_data['active'] = False
+                    self.canvas.itemconfig(cable_item, fill="gray")
+        
+        # Pour stabiliser, on relance la mise à jour des switches après un court délai
         self.root.after(50, self.update_switches)
-
 
 if __name__ == "__main__":
     root = tk.Tk()
