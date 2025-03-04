@@ -133,7 +133,7 @@ class GridApp:
         """Crée l'interface pour importer des schémas préconfigurés."""
         tk.Label(self.frame_presets, text="Sélectionnez un preset:", font=('Helvetica', 12, 'bold')).pack(pady=5)
         self.preset_selector = ttk.Combobox(self.frame_presets, state="readonly")
-        self.preset_selector['values'] = ["Porte ET"]
+        self.preset_selector['values'] = ["Porte AND","Porte OR","Porte NAND","Porte NOR","Porte NOT"]
         self.preset_selector.current(0)
         self.preset_selector.pack(pady=5)
         
@@ -245,6 +245,48 @@ class GridApp:
         ]
         self.import_schema(schema, offset_x, offset_y)
 
+    def import_or_gate(self, offset_x=0, offset_y=0):
+        schema = [
+            (1, 0, 0),
+            (0, 1, 0),   
+            (1, 0, 2),
+            (0, 1, 2),      
+            (0, 1, 1),
+            (0, 2, 1),      
+            (3, 3, 1)    
+        ]
+        self.import_schema(schema, offset_x, offset_y)
+    
+    def import_nand_gate(self, offset_x=0, offset_y=0):
+        schema = [
+            (1, 0, 0),
+            (2, 1, 0),
+            (1, 0, 2),
+            (2, 1, 2),
+            (0, 1, 1),
+            (3, 2, 1)
+        ]
+        self.import_schema(schema, offset_x, offset_y)
+    
+    def import_nor_gate(self, offset_x=0, offset_y=0):
+        schema = [
+            (1, 0, 0),
+            (0, 1, 0),
+            (1, 0, 1),
+            (0, 1, 1),
+            (2, 2, 0),
+            (3, 3, 0)
+        ]
+        self.import_schema(schema, offset_x, offset_y)
+    
+    def import_not_gate(self, offset_x=0, offset_y=0):
+        schema = [
+            (1, 0, 0),
+            (2, 1, 0),
+            (3, 2, 0),
+        ]
+        self.import_schema(schema, offset_x, offset_y)
+    
     def import_selected_preset(self):
         try:
             offset_x = int(self.offset_x_entry.get())
@@ -252,8 +294,16 @@ class GridApp:
         except ValueError:
             offset_x, offset_y = 0, 0
         preset = self.preset_selector.get()
-        if preset == "Porte ET":
+        if preset == "Porte AND":
             self.import_and_gate(offset_x, offset_y)
+        if preset == "Porte OR":
+            self.import_or_gate(offset_x,offset_y)
+        if preset == "Porte NAND":
+            self.import_nand_gate(offset_x,offset_y)
+        if preset == "Porte NOR":
+            self.import_nor_gate(offset_x,offset_y)
+        if preset == "Porte NOT":
+            self.import_not_gate(offset_x,offset_y)
         # D'autres presets peuvent être ajoutés ici.
 
     # ---------------------- Gestion des items placés ----------------------
