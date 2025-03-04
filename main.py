@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import ttk, filedialog
+from tkinter import ttk
 from collections import deque
 
 class GridApp:
@@ -10,54 +10,69 @@ class GridApp:
         self.grid_size = 50  # Taille d'une case
         self.items = {}
         self.placed_items = {}
-        self.position_index = {}  # Indexation spatiale : (x, y) -> id de l'item placé
+        self.position_index = {}  # (x, y) -> id de l'item placé
         self.selected_item = None
         self.item_id_counter = 0
         self.textures = {}
-        # Boucle de mise à jour centralisée
-        self.tick_interval = 100  # en ms
+        self.tick_interval = 100  # Intervalle en ms pour la boucle de mise à jour
         self.ticker_id = None
 
         self.notebook = ttk.Notebook(root)
         self.notebook.pack(expand=True, fill='both')
         
+        # Création des onglets
         self.frame_items = tk.Frame(self.notebook)
         self.frame_grid = tk.Frame(self.notebook)
         self.frame_settings = tk.Frame(self.notebook)
+        self.frame_presets = tk.Frame(self.notebook)  # Nouvel onglet pour les presets
         
         self.notebook.add(self.frame_items, text='Items')
         self.notebook.add(self.frame_grid, text='Grille')
         self.notebook.add(self.frame_settings, text='Paramètres')
+        self.notebook.add(self.frame_presets, text='Presets')
         
-        self.canvas = tk.Canvas(self.frame_grid, width=self.cols * self.grid_size, height=self.rows * self.grid_size, bg='white')
+        # Canvas de la grille
+        self.canvas = tk.Canvas(self.frame_grid, width=self.cols * self.grid_size, 
+                                height=self.rows * self.grid_size, bg='white')
         self.canvas.pack()
         
+        # Panneau Items
         self.selected_item_label = tk.Label(self.frame_items, text="Aucun item sélectionné", fg="red")
         self.selected_item_label.pack()
-        
         self.items_container = tk.Frame(self.frame_items)
         self.items_container.pack()
-        
         tk.Button(self.frame_items, text="Ajouter un item", command=self.add_item).pack()
         
         self.create_settings_panel()
+        self.create_presets_panel()  # Création du panneau presets
         self.draw_grid()
-        # Création des items par défaut (ici on ajoute 4 items pour inclure la LED)
+        # Création des items par défaut (incluant LED)
         for i in range(4):
             self.add_item()
         
+        # Bindings pour le canvas
         self.canvas.bind("<Button-1>", self.place_item)
         self.canvas.bind("<B1-Motion>", self.move_item)
         self.canvas.bind("<Button-3>", self.delete_item)
-        # Clique molette pour déselectionner l'item en main
-        self.canvas.bind("<Button-2>", self.release_item)
-
-        # Barre de statut en bas indiquant l'item en main
+        self.canvas.bind("<Button-2>", self.release_item)  # Clique molette pour déselectionner
+        
+        # Barre de statut
         self.status_bar = tk.Label(root, text="Item en main : Aucun", anchor='w')
         self.status_bar.pack(side=tk.BOTTOM, fill=tk.X)
 
         self.start_update_loop()
 
+    # ---------------------- Boucle de mise à jour centralisée ----------------------
+    def start_update_loop(self):
+        self.ticker_id = self.root.after(self.tick_interval, self.update_loop)
+
+    def update_loop(self):
+        self.update_switches()
+        self.update_cables()
+        self.update_leds()
+        self.ticker_id = self.root.after(self.tick_interval, self.update_loop)
+
+    # ---------------------- Mise à jour des éléments ----------------------
     def update_status_bar(self):
         if self.selected_item is not None:
             item_name = self.items[self.selected_item]['name']
@@ -70,22 +85,16 @@ class GridApp:
         self.selected_item_label.config(text="Aucun item sélectionné", fg="red")
         self.update_status_bar()
 
-    def start_update_loop(self):
-        self.ticker_id = self.root.after(self.tick_interval, self.update_loop)
-
-    def update_loop(self):
-        self.update_switches()
-        self.update_cables()
-        self.update_leds()  # Mise à jour des LED
-        self.ticker_id = self.root.after(self.tick_interval, self.update_loop)
-
     def draw_grid(self):
         self.canvas.delete("grid_line")
         for i in range(self.cols + 1):
-            self.canvas.create_line(i * self.grid_size, 0, i * self.grid_size, self.rows * self.grid_size, tags="grid_line")
+            self.canvas.create_line(i * self.grid_size, 0, i * self.grid_size, self.rows * self.grid_size,
+                                    tags="grid_line")
         for i in range(self.rows + 1):
-            self.canvas.create_line(0, i * self.grid_size, self.cols * self.grid_size, i * self.grid_size, tags="grid_line")
-    
+            self.canvas.create_line(0, i * self.grid_size, self.cols * self.grid_size, i * self.grid_size,
+                                    tags="grid_line")
+
+    # ---------------------- Panneaux Items, Paramètres et Presets ----------------------
     def create_settings_panel(self):
         # Paramètres des items
         tk.Label(self.frame_settings, text="Sélectionner un item:").pack()
@@ -102,7 +111,7 @@ class GridApp:
         self.color_entry.pack()
         
         tk.Button(self.frame_settings, text='Appliquer', command=self.apply_settings).pack(pady=5)
-
+        
         # Paramètres de la grille
         tk.Label(self.frame_settings, text="Paramètres de la grille", font=('Helvetica', 12, 'bold')).pack(pady=10)
         tk.Label(self.frame_settings, text="Nombre de lignes:").pack()
@@ -120,9 +129,27 @@ class GridApp:
         tk.Button(self.frame_settings, text="Confirmer paramètres grille", command=self.confirm_grid_settings).pack(pady=5)
         tk.Button(self.frame_settings, text="Reset Grid", command=self.reset_grid).pack(pady=5)
 
-    def update_item_selector(self):
-        self.item_selector['values'] = [f"{item_id}: {data['name']}" for item_id, data in self.items.items()]
-    
+    def create_presets_panel(self):
+        """Crée l'interface pour importer des schémas préconfigurés."""
+        tk.Label(self.frame_presets, text="Sélectionnez un preset:", font=('Helvetica', 12, 'bold')).pack(pady=5)
+        self.preset_selector = ttk.Combobox(self.frame_presets, state="readonly")
+        self.preset_selector['values'] = ["Porte ET"]
+        self.preset_selector.current(0)
+        self.preset_selector.pack(pady=5)
+        
+        offset_frame = tk.Frame(self.frame_presets)
+        offset_frame.pack(pady=5)
+        tk.Label(offset_frame, text="Offset X:").grid(row=0, column=0, padx=2)
+        self.offset_x_entry = tk.Entry(offset_frame, width=5)
+        self.offset_x_entry.insert(0, "0")
+        self.offset_x_entry.grid(row=0, column=1, padx=2)
+        tk.Label(offset_frame, text="Offset Y:").grid(row=0, column=2, padx=2)
+        self.offset_y_entry = tk.Entry(offset_frame, width=5)
+        self.offset_y_entry.insert(0, "0")
+        self.offset_y_entry.grid(row=0, column=3, padx=2)
+        
+        tk.Button(self.frame_presets, text="Importer le preset", command=self.import_selected_preset).pack(pady=5)
+
     def load_item_settings(self, event):
         selected_text = self.item_selector.get()
         if selected_text:
@@ -133,7 +160,7 @@ class GridApp:
             self.color_entry.insert(0, self.items[self.selected_item]['color'])
             self.selected_item_label.config(text=f"Item sélectionné: {self.items[self.selected_item]['name']}", fg="green")
             self.update_status_bar()
-    
+
     def apply_settings(self):
         if self.selected_item is not None:
             name = self.name_entry.get() or f'Item {self.selected_item}'
@@ -144,13 +171,16 @@ class GridApp:
             self.update_item_selector()
             self.selected_item_label.config(text=f"Item sélectionné: {name}", fg="green")
             self.update_status_bar()
-    
+
+    def update_item_selector(self):
+        self.item_selector['values'] = [f"{item_id}: {data['name']}" for item_id, data in self.items.items()]
+
     def select_item(self, item_id):
         self.selected_item = item_id
         self.selected_item_label.config(text=f"Item sélectionné: {self.items[item_id]['name']}", fg="green")
         self.update_item_selector()
         self.update_status_bar()
-    
+
     def confirm_grid_settings(self):
         try:
             new_rows = int(self.rows_entry.get())
@@ -172,6 +202,61 @@ class GridApp:
         self.canvas.delete("all")
         self.draw_grid()
 
+    # ---------------------- Fonctions d'import de schémas ----------------------
+    def import_schema_item(self, item_id, grid_x, grid_y):
+        """
+        Place un item sur la grille à la position (grid_x, grid_y) selon son type (item_id).
+        Pour les câbles, on commence avec la couleur "gray".
+        Pour les boutons (id 1), on lie l'événement de clic pour permettre l'activation/désactivation.
+        """
+        fill = self.items[item_id]['color'] if item_id != 0 else "gray"
+        item = self.canvas.create_oval(
+            grid_x * self.grid_size + 5, grid_y * self.grid_size + 5,
+            (grid_x + 1) * self.grid_size - 5, (grid_y + 1) * self.grid_size - 5,
+            fill=fill, tags='movable'
+        )
+        self.placed_items[item] = {
+            'id': item_id,
+            'active': (item_id == 1),  # Les boutons (id 1) sont activés par défaut
+            'position': (grid_x, grid_y),
+            'previous_state': False,
+            'initialized': False
+        }
+        self.position_index[(grid_x, grid_y)] = item
+        # Pour les boutons, lier le clic pour toggler leur état
+        if item_id == 1:
+            self.canvas.tag_bind(item, "<Button-1>", self.toggle_item_state)
+        if item_id == 2:
+            self.root.after(200, lambda: self.set_switch_initialized(item))
+
+    def import_schema(self, schema, offset_x=0, offset_y=0):
+        for item_type, rel_x, rel_y in schema:
+            self.import_schema_item(item_type, offset_x + rel_x, offset_y + rel_y)
+
+    def import_and_gate(self, offset_x=0, offset_y=0):
+        schema = [
+            (1, 0, 0),   # Bouton (entrée supérieure)
+            (2, 1, 0),   # Switch à droite du bouton supérieur
+            (1, 0, 2),   # Bouton (entrée inférieure)
+            (2, 1, 2),   # Switch à droite du bouton inférieur
+            (0, 1, 1),   # Cable reliant les deux entrées
+            (2, 2, 1),   # Switch de traitement
+            (3, 3, 1)    # LED en sortie
+        ]
+        self.import_schema(schema, offset_x, offset_y)
+
+    def import_selected_preset(self):
+        try:
+            offset_x = int(self.offset_x_entry.get())
+            offset_y = int(self.offset_y_entry.get())
+        except ValueError:
+            offset_x, offset_y = 0, 0
+        preset = self.preset_selector.get()
+        if preset == "Porte ET":
+            self.import_and_gate(offset_x, offset_y)
+        # D'autres presets peuvent être ajoutés ici.
+
+    # ---------------------- Gestion des items placés ----------------------
     def set_switch_initialized(self, item):
         if item in self.placed_items:
             self.placed_items[item]['initialized'] = True
@@ -188,7 +273,7 @@ class GridApp:
             )
             self.placed_items[item] = {
                 'id': self.selected_item,
-                'active': (self.selected_item == 1),  # Bouton activé par défaut
+                'active': (self.selected_item == 1),
                 'position': (x, y),
                 'previous_state': False,
                 'initialized': False
@@ -206,7 +291,7 @@ class GridApp:
         if item:
             item_id = item[0]
             if item_id not in self.placed_items:
-                print(f"Erreur : l'élément {item_id} n'existe pas dans placed_items")
+                print(f"Erreur : l'élément {item_id} n'existe pas")
                 return
             old_pos = self.placed_items[item_id]['position']
             x, y = event.x // self.grid_size, event.y // self.grid_size
@@ -244,9 +329,7 @@ class GridApp:
     def update_switches(self):
         switches = {item: data for item, data in self.placed_items.items() if data['id'] == 2}
         for item, data in switches.items():
-            if item not in self.placed_items:
-                continue
-            if not data.get('initialized', False):
+            if item not in self.placed_items or not data.get('initialized', False):
                 continue
             x, y = data['position']
             left_pos = (x - 1, y)
@@ -299,39 +382,28 @@ class GridApp:
                     self.canvas.itemconfig(cable_item, fill="gray")
 
     def update_leds(self):
-        """Met à jour l'état des LED.
-        Une LED (id == 3) devient 'allumée' (par exemple, couleur jaune) si l'une de ses cases adjacentes est activée, sinon elle reste grise."""
         for item, data in self.placed_items.items():
             if data['id'] == 3:  # LED
                 x, y = data['position']
-                # Considérer les voisins immédiats
                 neighbors = [(x-1, y), (x+1, y), (x, y-1), (x, y+1)]
-                active = False
-                for nx, ny in neighbors:
-                    if (nx, ny) in self.position_index:
-                        neighbor_id = self.position_index[(nx, ny)]
-                        if self.placed_items[neighbor_id].get('active', False):
-                            active = True
-                            break
-                # Met à jour l'état et la couleur
+                active = any((nx, ny) in self.position_index and 
+                             self.placed_items[self.position_index[(nx, ny)]].get('active', False)
+                             for nx, ny in neighbors)
                 if active and not data.get('active', False):
                     data['active'] = True
-                    # Couleur LED allumée (on_color)
-                    on_color = data.get('on_color', "yellow")
+                    on_color = self.items[3].get('on_color', "yellow")
                     self.canvas.itemconfig(item, fill=on_color)
                 elif not active and data.get('active', False):
                     data['active'] = False
-                    # Couleur LED éteinte
                     self.canvas.itemconfig(item, fill="grey")
 
+    # ---------------------- Ajout d'items ----------------------
     def add_item(self):
         item_id = self.item_id_counter
         self.item_id_counter += 1
-
-        # Définition des items en fonction de l'ID
         if item_id == 0:
             name = "Câble"
-            color = "green"  # Couleur par défaut pour le câble activé
+            color = "green"
         elif item_id == 1:
             name = "Bouton"
             color = "red"
@@ -340,11 +412,10 @@ class GridApp:
             color = "orange"
         elif item_id == 3:
             name = "LED"
-            color = "grey"  # Couleur par défaut pour la LED éteinte
+            color = "grey"
         else:
             name = f"Item {item_id}"
             color = "blue"
-
         item = tk.Canvas(self.items_container, width=self.grid_size, height=self.grid_size, bg='white')
         item.pack(side=tk.LEFT, padx=5, pady=5)
         shape = item.create_oval(5, 5, self.grid_size - 5, self.grid_size - 5, fill=color)
@@ -356,7 +427,6 @@ class GridApp:
             'name': name,
             'texture': None
         }
-        # Pour la LED, on ajoute la couleur d'allumage
         if item_id == 3:
             self.items[item_id]['on_color'] = "yellow"
         if hasattr(self, 'item_selector'):
