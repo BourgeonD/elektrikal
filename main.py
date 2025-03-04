@@ -448,35 +448,34 @@ class GridApp:
                     self.canvas.itemconfig(item, fill="olive")
                     
     def update_comparators(self):
-        """Met à jour les comparateurs en fonction des entrées gauche et arrière."""
+        """Met à jour les comparateurs et applique les règles Redstone de Minecraft."""
         for item, data in self.placed_items.items():
             if data['id'] == 4:  # Comparateur
                 x, y = data['position']
 
-                # Positions des entrées
-                left_pos = (x - 1, y)
-                back_pos = (x, y - 1)  # Entrée arrière
-                right_pos = (x + 1, y)  # Sortie
+                # Définition des positions
+                back_pos = (x - 1, y)   # Arrière (Gauche en 2D)
+                front_pos = (x + 1, y)  # Avant (Droite en 2D)
+                left_pos = (x, y - 1)   # Gauche (Haut en 2D)
+                right_pos = (x, y + 1)  # Droite (Bas en 2D)
 
-                left_active = left_pos in self.position_index and self.placed_items[self.position_index[left_pos]].get('active', False)
+                # Vérification des entrées
                 back_active = back_pos in self.position_index and self.placed_items[self.position_index[back_pos]].get('active', False)
+                left_active = left_pos in self.position_index and self.placed_items[self.position_index[left_pos]].get('active', False)
+                right_active = right_pos in self.position_index and self.placed_items[self.position_index[right_pos]].get('active', False)
 
-                # Logique du comparateur (fonctionne comme en redstone) :
-                # - Si l'entrée arrière est plus forte que l'entrée latérale → Comparateur désactivé.
-                # - Sinon, il propage le signal latéral vers l'avant.
-                if back_active and not left_active:
-                    data['active'] = False
-                    self.canvas.itemconfig(item, fill="purple")  # Désactivé
+                # **Application des règles du comparateur**
+                if back_active and not (left_active or right_active):
+                    data['active'] = True  # Transmission du signal arrière
                 else:
-                    data['active'] = left_active
-                    self.canvas.itemconfig(item, fill="magenta" if left_active else "purple")
+                    data['active'] = False  # Comparateur désactivé si une entrée latérale est active
 
-                # Propager l'activation vers l'avant (si actif)
-                if data['active'] and right_pos in self.position_index:
-                    forward_item = self.placed_items[self.position_index[right_pos]]
-                    if forward_item['id'] == 0:  # Si câble en sortie
+                # Propagation du signal vers l'avant (Droite)
+                if data['active'] and front_pos in self.position_index:
+                    forward_item = self.placed_items[self.position_index[front_pos]]
+                    if forward_item['id'] == 0:  # Si un câble est en sortie
                         forward_item['active'] = True
-                        self.canvas.itemconfig(self.position_index[right_pos], fill="green")
+
 
     def update_repeaters(self):
         """Met à jour les répéteurs pour qu'ils prolongent un signal uniquement vers l'avant (droite)."""
