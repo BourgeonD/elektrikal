@@ -373,7 +373,7 @@ class GridApp:
             item_id = item_data['id']
             if item_id == 1:
                 item_data['active'] = not item_data['active']
-                new_color = self.items[item_id]['color'] if item_data['active'] else 'gray'
+                new_color = self.items[item_id]['color'] if item_data['active'] else 'brown'
                 self.canvas.itemconfig(item[0], fill=new_color)
 
     def update_switches(self):
@@ -390,7 +390,7 @@ class GridApp:
             new_state = False if (left_item is not None and left_item.get('active', False)) else True
             if data['active'] != new_state:
                 data['active'] = new_state
-                new_color = "orange" if new_state else "gray"
+                new_color = "orange" if new_state else "moccasin"
                 self.canvas.itemconfig(item, fill=new_color)
 
     def update_cables(self):
@@ -425,11 +425,11 @@ class GridApp:
             if cable_data['position'] in reachable:
                 if not cable_data['active']:
                     cable_data['active'] = True
-                    self.canvas.itemconfig(cable_item, fill="green")
+                    self.canvas.itemconfig(cable_item, fill="lime")
             else:
                 if cable_data['active']:
                     cable_data['active'] = False
-                    self.canvas.itemconfig(cable_item, fill="gray")
+                    self.canvas.itemconfig(cable_item, fill="forestgreen")
 
     def update_leds(self):
         for item, data in self.placed_items.items():
@@ -445,7 +445,7 @@ class GridApp:
                     self.canvas.itemconfig(item, fill=on_color)
                 elif not active and data.get('active', False):
                     data['active'] = False
-                    self.canvas.itemconfig(item, fill="grey")
+                    self.canvas.itemconfig(item, fill="olive")
                     
     def update_comparators(self):
         """Met à jour les comparateurs en fonction des entrées gauche et arrière."""
@@ -466,10 +466,10 @@ class GridApp:
                 # - Sinon, il propage le signal latéral vers l'avant.
                 if back_active and not left_active:
                     data['active'] = False
-                    self.canvas.itemconfig(item, fill="gray")  # Désactivé
+                    self.canvas.itemconfig(item, fill="purple")  # Désactivé
                 else:
                     data['active'] = left_active
-                    self.canvas.itemconfig(item, fill="purple" if left_active else "gray")
+                    self.canvas.itemconfig(item, fill="magenta" if left_active else "purple")
 
                 # Propager l'activation vers l'avant (si actif)
                 if data['active'] and right_pos in self.position_index:
@@ -499,7 +499,7 @@ class GridApp:
                     self.root.after(100, lambda: self.propagate_repeater_signal(front_pos))
                 else:
                     data['active'] = False
-                    self.canvas.itemconfig(item, fill="gray")  # Répéteur éteint
+                    self.canvas.itemconfig(item, fill="darkblue")  # Répéteur éteint
         
     def propagate_repeater_signal(self, front_pos):
         """Propage le signal du répéteur à l'élément de sortie après un délai."""
@@ -528,22 +528,22 @@ class GridApp:
         self.item_id_counter += 1
         if item_id == 0:
             name = "Câble"
-            color = "green"
+            color = "forestgreen"
         elif item_id == 1:
             name = "Bouton"
             color = "red"
         elif item_id == 2:
             name = "Switch"
-            color = "orange"
+            color = "moccasin"
         elif item_id == 3:
             name = "LED"
-            color = "grey"
+            color = "olive"
         elif item_id == 4:
             name = "Comparateur"
             color = "purple"
         elif item_id == 5:
             name = "Amplificateur"
-            color = "blue"
+            color = "darkblue"
         else:
             name = f"Item {item_id}"
             color = "blue"
