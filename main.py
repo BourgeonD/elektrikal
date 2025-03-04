@@ -10,6 +10,7 @@ class GridApp:
         self.grid_size = 50  # Taille d'une case
         self.items = {}
         self.placed_items = {}
+        self.signal_strength = {}
         self.position_index = {}  # (x, y) -> id de l'item placé
         self.selected_item = None
         self.item_id_counter = 0
@@ -69,9 +70,9 @@ class GridApp:
     def update_loop(self):
         self.update_switches()
         self.update_cables()
-        self.update_leds()
         self.update_comparators()
         self.update_repeaters()
+        self.update_leds()
         self.ticker_id = self.root.after(self.tick_interval, self.update_loop)
 
     # ---------------------- Mise à jour des éléments ----------------------
@@ -394,42 +395,52 @@ class GridApp:
                 self.canvas.itemconfig(item, fill=new_color)
 
     def update_cables(self):
-        cables = {item: data for item, data in self.placed_items.items() if data['id'] == 0}
-        cable_positions = {data['position'] for data in cables.values()}
-        active_sources = []
+        """Met à jour les câbles pour qu'ils ne propagent pas un signal au-delà de 15 blocs."""
+        updated_signals = {}
+
+        # **Réinitialisation de tous les câbles avant la mise à jour**
         for item, data in self.placed_items.items():
-            if data.get('active', False) and data['id'] in (1, 2):
-                if data['id'] == 1:
-                    allowed_dirs = [(-1, 0), (1, 0), (0, -1), (0, 1)]
-                elif data['id'] == 2:
-                    allowed_dirs = [(1, 0), (0, -1), (0, 1)]
-                active_sources.append((data['position'], allowed_dirs))
-        reachable = set()
-        frontier = deque()
-        for pos, allowed_dirs in active_sources:
-            x, y = pos
-            for dx, dy in allowed_dirs:
-                neighbor = (x + dx, y + dy)
-                if neighbor in cable_positions and neighbor not in reachable:
-                    reachable.add(neighbor)
-                    frontier.append(neighbor)
-        while frontier:
-            current = frontier.popleft()
-            cx, cy = current
-            for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
-                neighbor = (cx + dx, cy + dy)
-                if neighbor in cable_positions and neighbor not in reachable:
-                    reachable.add(neighbor)
-                    frontier.append(neighbor)
-        for cable_item, cable_data in cables.items():
-            if cable_data['position'] in reachable:
-                if not cable_data['active']:
-                    cable_data['active'] = True
-                    self.canvas.itemconfig(cable_item, fill="lime")
-            else:
-                if cable_data['active']:
-                    cable_data['active'] = False
-                    self.canvas.itemconfig(cable_item, fill="forestgreen")
+            if data['id'] == 0:  # Câble
+                data['active'] = False  # Désactivation par défaut
+                self.signal_strength[item] = 0  # Puissance à 0
+
+        # **Première passe : rechercher les sources de signal actives**
+        for item, data in self.placed_items.items():
+            if data['id'] in [1, 2, 4, 5]:  # Bouton, Switch, Comparateur, Répéteur
+                x, y = data['position']
+                if data['active']:
+                    updated_signals[(x, y)] = 15  # Source max = 15
+
+        # **Propagation du signal aux câbles**
+        for _ in range(15):  # Max 15 blocs de propagation
+            new_signals = {}
+            for (x, y), power in updated_signals.items():
+                if power > 0:
+                    # Vérifier les voisins (haut, bas, gauche, droite)
+                    for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                        neighbor = (x + dx, y + dy)
+                        if neighbor in self.position_index:
+                            neighbor_item = self.position_index[neighbor]
+                            if self.placed_items[neighbor_item]['id'] == 0:  # Si c'est un câble
+                                if neighbor not in new_signals or new_signals[neighbor] < power - 1:
+                                    new_signals[neighbor] = power - 1  # Perte d'intensité
+            updated_signals.update(new_signals)
+
+        # **Appliquer les nouvelles intensités aux câbles et éteindre ceux qui ne sont plus alimentés**
+        for (x, y), power in updated_signals.items():
+            item = self.position_index.get((x, y))
+            if item and self.placed_items[item]['id'] == 0:
+                self.placed_items[item]['active'] = power > 0
+                self.signal_strength[item] = power
+                self.canvas.itemconfig(item, fill="lime" if power > 0 else "forestgreen")  # Mise à jour visuelle
+
+        # **Désactiver tous les câbles qui n'ont pas reçu de signal dans la chaîne**
+        for item, data in self.placed_items.items():
+            if data['id'] == 0 and (data['position'] not in updated_signals):
+                data['active'] = False
+                self.signal_strength[item] = 0
+                self.canvas.itemconfig(item, fill="forestgreen")  # Éteindre le câble
+
 
     def update_leds(self):
         for item, data in self.placed_items.items():
@@ -478,27 +489,50 @@ class GridApp:
 
 
     def update_repeaters(self):
-        """Met à jour les répéteurs pour qu'ils prolongent un signal uniquement vers l'avant (droite)."""
+        """Met à jour les répéteurs pour qu'ils captent uniquement à gauche et transmettent uniquement à droite sans modifier la gauche."""
         for item, data in self.placed_items.items():
             if data['id'] == 5:  # Répéteur
                 x, y = data['position']
+                back_pos = (x - 1, y)  # Entrée (Gauche en 2D)
+                front_pos = (x + 1, y)  # Sortie (Droite en 2D)
 
-                # Position d'entrée (arrière) et de sortie (avant)
-                back_pos = (x - 1, y)  # Entrée arrière (gauche)
-                front_pos = (x + 1, y)  # Sortie avant (droite)
+                # Vérifier si un élément actif est en entrée après mise à jour des câbles
+                back_item = self.position_index.get(back_pos)
+                back_power = self.signal_strength.get(back_item, 0) if back_item and self.placed_items[back_item]['id'] in [0, 1, 2, 4, 5] and self.placed_items[back_item]['active'] else 0
 
-                back_active = back_pos in self.position_index and self.placed_items[self.position_index[back_pos]].get('active', False)
-
-                # Si l'entrée arrière est active, le répéteur s'allume et envoie un signal vers l'avant
-                if back_active:
+                if back_power > 0:
+                    # 🔹 Répéteur activé : propage le signal UNIQUEMENT vers l'avant (droite)
                     data['active'] = True
-                    self.canvas.itemconfig(item, fill="blue")  # Répéteur activé
-
-                    # Propage le signal vers l'avant après un léger délai (100ms)
-                    self.root.after(100, lambda: self.propagate_repeater_signal(front_pos))
+                    self.signal_strength[item] = 15  # Remise à pleine puissance
+                    
+                    # **Transmettre uniquement vers l'avant (droite)**
+                    if front_pos in self.position_index:
+                        front_item = self.placed_items[self.position_index[front_pos]]
+                        if front_item['id'] in [0, 3, 4, 5]:  # Si c'est un câble, une LED, un comparateur ou un autre répéteur
+                            self.signal_strength[self.position_index[front_pos]] = 15
+                            front_item['active'] = True
                 else:
+                    # 🔹 Répéteur désactivé : coupe toute transmission immédiatement
                     data['active'] = False
-                    self.canvas.itemconfig(item, fill="darkblue")  # Répéteur éteint
+                    self.signal_strength[item] = 0  # Réinitialisation
+
+                    # Désactiver tout élément en sortie immédiatement
+                    if front_pos in self.position_index:
+                        front_item = self.position_index[front_pos]
+                        if self.placed_items[front_item]['id'] in [0, 3, 4, 5]:  # Si câble, LED, comparateur ou répéteur
+                            self.signal_strength[front_item] = 0
+                            self.placed_items[front_item]['active'] = False
+                            self.canvas.itemconfig(front_item, fill="gray")  # Désactiver visuellement
+
+                # 🚫 VERROUILLER la transmission vers le HAUT et le BAS 🚫
+                for side_pos in [(x, y - 1), (x, y + 1)]:  # Haut et Bas
+                    if side_pos in self.position_index:
+                        side_item = self.position_index[side_pos]
+                        if self.placed_items[side_item]['id'] in [0, 3, 4, 5]:  # Si un élément pouvant recevoir un signal
+                            self.signal_strength[side_item] = 0  # Interdiction de transmission
+                            self.placed_items[side_item]['active'] = False
+                            self.canvas.itemconfig(side_item, fill="gray")  # Désactiver visuellement
+
         
     def propagate_repeater_signal(self, front_pos):
         """Propage le signal du répéteur à l'élément de sortie après un délai."""
