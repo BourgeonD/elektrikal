@@ -248,12 +248,10 @@ class GridApp:
     def import_or_gate(self, offset_x=0, offset_y=0):
         schema = [
             (1, 0, 0),
-            (0, 1, 0),   
-            (1, 0, 2),
-            (0, 1, 2),      
+            (1, 0, 1),
+            (0, 1, 0),
             (0, 1, 1),
-            (0, 2, 1),      
-            (3, 3, 1)    
+            (3, 2, 0) 
         ]
         self.import_schema(schema, offset_x, offset_y)
     
